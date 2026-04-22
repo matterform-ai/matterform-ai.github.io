@@ -1,0 +1,14 @@
+{
+  "name": "aristotle-landing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun ./index.html",
+    "build": "bun build ./index.html --outdir=dist --minify",
+    "preview": "bun --bun serve dist"
+  },
+  "dependencies": {
+    "three": "^0.184.0"
+  }
+}

@@ -1,0 +1,146 @@
+:root {
+  --bg: #eeeee4;
+  --fg: #2a1a14;
+  --muted: #8a4a40;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  overflow: hidden;
+  font-family: 'Courier New', ui-monospace, monospace;
+  color: var(--fg);
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  overflow: hidden; /* clip the offscreen lower half of the canvas */
+}
+
+/* The WebGL canvas (renderer.domElement) now lives directly inside #stage.
+   The ASCII look is produced entirely in a GPU post-process shader, so the
+   canvas just needs positioning.
+   Placement: horizontally centered with its geometric center pinned to the
+   viewport's bottom edge, then rotated 45°. The upper half of the bust
+   (rising from the viewport bottom) tilts into view; the lower half falls
+   offscreen below. Transform reads right-to-left: rotate first (around the
+   canvas's own center), then translate -50%,-50% to re-center on the pin. */
+#stage > canvas {
+  display: block;
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+/* Editorial masthead — same Times-serif family as the editorial signature.
+   Upper-left of viewport, pairs diagonally with the bust in lower-right. */
+#header {
+  position: fixed;
+  top: 56px;
+  left: 64px;
+  max-width: min(460px, calc(100vw - 128px));
+  z-index: 10;
+  font-family: 'Times New Roman', Georgia, serif;
+  color: var(--fg);
+  pointer-events: none;
+}
+
+#header h1 {
+  margin: 0 0 40px 0;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.5em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+
+/* Italic ampersand — typographic tradition; reads warmer than a roman &. */
+#header h1 .amp {
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: 0;
+  margin: 0 0.15em;
+}
+
+#header .epigraph {
+  margin: 0;
+  padding: 0;
+  border-left: 1px solid var(--muted);
+  padding-left: 20px;
+}
+
+#header .epigraph p {
+  margin: 0 0 14px 0;
+  font-size: 15px;
+  line-height: 1.55;
+  font-style: italic;
+  font-weight: 400;
+  color: var(--fg);
+}
+
+#header .epigraph cite {
+  display: block;
+  font-size: 9px;
+  font-style: normal;
+  letter-spacing: 0.45em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+#loading {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.25em;
+  z-index: 5;
+}
+
+/* Palette debug selector — small unobtrusive HUD bottom-right. */
+#palette-hud {
+  position: fixed;
+  bottom: 40px;
+  right: 40px;
+  z-index: 30;
+  font-family: 'Courier New', ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(138, 74, 64, 0.2);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+  opacity: 0.85;
+}
+#palette-hud #palette-name {
+  color: var(--fg);
+  font-weight: 500;
+}
+#palette-hud #palette-hint {
+  font-size: 9px;
+  opacity: 0.7;
+}
+
+/* Subtle vignette — softened for the light cream background */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 60%, rgba(239, 72, 60, 0.08) 100%);
+  z-index: 20;
+}
