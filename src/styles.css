@@ -18,7 +18,10 @@ html, body {
   position: fixed;
   inset: 0;
   overflow: hidden; /* clip the offscreen lower half of the canvas */
+  touch-action: none; /* own the drag gesture — no scroll/zoom interference on iOS */
+  cursor: grab;
 }
+#stage:active { cursor: grabbing; }
 
 /* The WebGL canvas (renderer.domElement) now lives directly inside #stage.
    The ASCII look is produced entirely in a GPU post-process shader, so the

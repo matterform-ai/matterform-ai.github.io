@@ -255,6 +255,48 @@ const loader = new GLTFLoader();
   }
 })();
 
+// Pointer-driven rotation with momentum. While dragging, horizontal screen
+// delta rotates the bust directly. On release, the recent drag velocity
+// becomes angular velocity, which then damps back toward AUTO_SPIN_RATE so
+// the idle contemplative spin resumes on its own.
+const AUTO_SPIN_RATE = 0.2;   // rad/s — idle spin
+const DRAG_SENSITIVITY = 0.01; // rad per CSS pixel of horizontal drag
+const SPIN_DAMP = 1.2;         // higher = faster return to AUTO_SPIN_RATE
+const MAX_FLING = 12;          // rad/s cap on post-release velocity
+let dragging = false;
+let lastPointerX = 0;
+let angVel = AUTO_SPIN_RATE;
+const velSamples = []; // { t, d } pairs over the last ~100 ms
+
+stage.addEventListener('pointerdown', (e) => {
+  dragging = true;
+  lastPointerX = e.clientX;
+  velSamples.length = 0;
+  stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener('pointermove', (e) => {
+  if (!dragging || !bust) return;
+  const dx = e.clientX - lastPointerX;
+  lastPointerX = e.clientX;
+  const d = dx * DRAG_SENSITIVITY;
+  bust.rotation.y += d;
+  velSamples.push({ t: performance.now(), d });
+  const cutoff = performance.now() - 100;
+  while (velSamples.length && velSamples[0].t < cutoff) velSamples.shift();
+});
+const endDrag = () => {
+  if (!dragging) return;
+  dragging = false;
+  if (velSamples.length >= 2) {
+    const total = velSamples.reduce((s, v) => s + v.d, 0);
+    const dur = (velSamples[velSamples.length - 1].t - velSamples[0].t) / 1000;
+    if (dur > 0) angVel = Math.max(-MAX_FLING, Math.min(MAX_FLING, total / dur));
+  }
+  velSamples.length = 0;
+};
+stage.addEventListener('pointerup', endDrag);
+stage.addEventListener('pointercancel', endDrag);
+
 // Throttle to ~30 fps (33 ms frame budget).
 const FRAME_MS = 1000 / 30;
 let rafId = 0;
@@ -266,7 +308,10 @@ function animate(now) {
   if (now - last < FRAME_MS) return;
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
-  if (bust) bust.rotation.y += 0.2 * dt; // ~0.2 rad/s — slow contemplative spin, framerate-independent
+  if (bust && !dragging) {
+    angVel += (AUTO_SPIN_RATE - angVel) * Math.min(1, dt * SPIN_DAMP);
+    bust.rotation.y += angVel * dt;
+  }
   uTime.value = now * 0.001; // seconds — drives the hue drift
   const cvs = renderer.domElement;
   if (cvs.width > 0 && cvs.height > 0) {
