@@ -150,14 +150,16 @@ const postMaterial = new THREE.ShaderMaterial({
       float charIdx = clamp(floor((1.0 - lum) * charCount), 0.0, charCount - 1.0);
       // Static paper-grain texture: in background-dominated cells (cream with
       // no bust contribution), a cheap hash of the cell grid index sprinkles
-      // a very sparse dark glyph — keeps the ASCII aesthetic alive in the
+      // a very sparse muted glyph — keeps the ASCII aesthetic alive in the
       // empty regions of the viewport so they don't read as flat color blocks.
+      // Threshold on the linear-space cream luminance (~0.85), not sRGB.
       vec2 cellIdx = floor(fragCoord / cellSize);
       float h = fract(sin(dot(cellIdx, vec2(127.1, 311.7))) * 43758.5453);
-      float bgMask = smoothstep(0.92, 0.98, lum);
-      // glyph 1 ('.') in ~3% of cells, glyph 2 (',') in ~1.5%
-      float noiseCharIdx = step(0.97, h) * 1.0 + step(0.985, h) * 1.0;
-      charIdx = mix(charIdx, noiseCharIdx, bgMask * step(0.97, h));
+      float bgMask = smoothstep(0.80, 0.88, lum);
+      float noiseTrigger = bgMask * step(0.96, h);
+      // glyph 1 ('.') in the top ~4% of cells, glyph 2 (',') in the top ~2%
+      float noiseCharIdx = step(0.96, h) * 1.0 + step(0.98, h) * 1.0;
+      charIdx = mix(charIdx, noiseCharIdx, noiseTrigger);
       // Position within this cell, 0..1
       vec2 cellLocal = (fragCoord - cellOrigin) / cellSize;
       // Map to char atlas U (one char per slot)
@@ -165,8 +167,12 @@ const postMaterial = new THREE.ShaderMaterial({
       float charMask = texture2D(tChars, charUV).a;
       // bgColor is sRGB (raw display values). cellColor from RT is linear —
       // encode only the bust color to sRGB, then mix directly in sRGB space.
+      // For noise cells, override to a muted brown so the glyph is visible
+      // against the cream background instead of cream-on-cream.
       vec3 cellSRGB = linearToSRGB_(cellColor);
-      gl_FragColor = vec4(mix(bgColor, cellSRGB, charMask), 1.0);
+      vec3 noiseColor = vec3(138.0/255.0, 74.0/255.0, 64.0/255.0); // --muted
+      vec3 charColor = mix(cellSRGB, noiseColor, noiseTrigger);
+      gl_FragColor = vec4(mix(bgColor, charColor, charMask), 1.0);
     }
   `,
 });
