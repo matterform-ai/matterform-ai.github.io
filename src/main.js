@@ -168,81 +168,12 @@ postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMaterial));
 // discarded before they reach the framebuffer. Skipping lights saves a
 // light-loop pass in the fragment shader per pixel.
 
-// Palette selector — press 1–9 to cycle. Each palette is a combination of:
-//   near/mid/far : depth-based color stops (mid optional; smoothstep blend)
-//   rim          : optional fresnel-based highlight color on silhouette edges
-//   rimStrength  : 0 disables the rim lookup
-// Colors here are sRGB hex; converted to linear on apply.
-// Palettes need a WIDE luma range between near & far so the char-density
-// picker reads visible gradation; hue-only shifts look "flat" because every
-// cell picks the same char.  Each near is pushed toward bright, each far
-// toward near-black.
-//
-// Per-palette optional fields:
-//   mid            — adds a 3-stop smoothstep blend
-//   rim, rimStrength — fresnel silhouette highlight
-//   driftSpeed     — rad/s of hue rotation around the luminance axis
-const PALETTES = [
-  { name: 'Salmon / Black (original)',
-    near: 0xffa595, far: 0x1a0201 },
-  { name: 'Terracotta / Cobalt',
-    near: 0xf48851, far: 0x081a2a },
-  { name: 'Amber / Aubergine',
-    near: 0xeaa94a, far: 0x14081e },
-  { name: 'Bronze / Gunmetal',
-    near: 0xdc9a58, far: 0x0a1116 },
-  { name: '3-stop: Salmon → Burgundy → Charcoal',
-    near: 0xef8070, mid: 0x6a1a10, far: 0x080808 },
-  { name: 'Rim-lit Burgundy + Gold',
-    near: 0x9f2424, far: 0x120303, rim: 0xf5ca6e, rimStrength: 1.6 },
-  { name: 'Oxblood / Teal-Ink',
-    near: 0xc44536, far: 0x061f24 },
-  { name: '3-stop Hues: Terracotta → Plum → Cobalt',
-    near: 0xe87a4a, mid: 0x6c3540, far: 0x08263c },
-  { name: 'Salmon / Black + Hue Drift (1 + drift)',
-    near: 0xffa595, far: 0x1a0201, driftSpeed: 0.12 },
-];
-
-// Stable uniform-value objects — the shader hook references these once at
-// compile time; applyPalette() mutates them in place so updates are live.
-const paletteState = {
-  near:        { value: new THREE.Color() },
-  mid:         { value: new THREE.Color() },
-  far:         { value: new THREE.Color() },
-  useMid:      { value: 0 },
-  rim:         { value: new THREE.Color() },
-  rimStrength: { value: 0 },
-  driftSpeed:  { value: 0 },
-  time:        { value: 0 }, // seconds since load; ticked each frame
-  minDepth:    { value: 5.70 },
-  maxDepth:    { value: 6.50 },
-};
-
-function applyPalette(p) {
-  paletteState.near.value.set(p.near).convertSRGBToLinear();
-  paletteState.far.value.set(p.far).convertSRGBToLinear();
-  paletteState.useMid.value = p.mid != null ? 1 : 0;
-  if (p.mid != null) paletteState.mid.value.set(p.mid).convertSRGBToLinear();
-  paletteState.rimStrength.value = p.rim != null ? (p.rimStrength ?? 1.0) : 0;
-  if (p.rim != null) paletteState.rim.value.set(p.rim).convertSRGBToLinear();
-  paletteState.driftSpeed.value = p.driftSpeed || 0;
-}
-let currentPaletteIdx = 0;
-function setPalette(idx) {
-  currentPaletteIdx = ((idx % PALETTES.length) + PALETTES.length) % PALETTES.length;
-  const p = PALETTES[currentPaletteIdx];
-  applyPalette(p);
-  const nameEl = document.getElementById('palette-name');
-  if (nameEl) nameEl.textContent = `${currentPaletteIdx + 1}. ${p.name}`;
-}
-// Wire 1–9 keys → palette switching
-window.addEventListener('keydown', (e) => {
-  if (e.key >= '1' && e.key <= '9') {
-    const idx = parseInt(e.key, 10) - 1;
-    if (idx < PALETTES.length) setPalette(idx);
-  }
-});
-setPalette(0); // boot with the original
+// Palette: salmon-near + black-far with slow hue drift. The Rodrigues
+// rotation preserves luma, so the dramatic brightness range stays intact
+// while the hue cycles through the spectrum over ~52 s (full 2π / 0.12).
+// All palette parameters are baked into the shader as constants — the only
+// runtime uniform is the clock tick below.
+const uTime = { value: 0 };
 
 const bustMaterial = new THREE.MeshPhongMaterial({
   color: 0xffffff,
@@ -250,38 +181,16 @@ const bustMaterial = new THREE.MeshPhongMaterial({
   flatShading: false,
 });
 bustMaterial.onBeforeCompile = (shader) => {
-  // Expose palette state as real uniforms — names prefixed `uMF_` to avoid
-  // collisions with anything in Three's built-in Phong uniform dictionary.
-  shader.uniforms.uMF_near        = paletteState.near;
-  shader.uniforms.uMF_mid         = paletteState.mid;
-  shader.uniforms.uMF_far         = paletteState.far;
-  shader.uniforms.uMF_useMid      = paletteState.useMid;
-  shader.uniforms.uMF_rim         = paletteState.rim;
-  shader.uniforms.uMF_rimStrength = paletteState.rimStrength;
-  shader.uniforms.uMF_driftSpeed  = paletteState.driftSpeed;
-  shader.uniforms.uMF_time        = paletteState.time;
-  shader.uniforms.uMF_minDepth    = paletteState.minDepth;
-  shader.uniforms.uMF_maxDepth    = paletteState.maxDepth;
-
-  shader.vertexShader = 'varying float vDepth;\nvarying vec3 vViewNormal;\n' + shader.vertexShader.replace(
+  shader.uniforms.uMF_time = uTime;
+  shader.vertexShader = 'varying float vDepth;\n' + shader.vertexShader.replace(
     '#include <project_vertex>',
-    '#include <project_vertex>\nvDepth = -mvPosition.z;\nvViewNormal = normalize(normalMatrix * normal);'
+    '#include <project_vertex>\nvDepth = -mvPosition.z;'
   );
   shader.fragmentShader =
     'varying float vDepth;\n' +
-    'varying vec3 vViewNormal;\n' +
-    'uniform vec3 uMF_near;\n' +
-    'uniform vec3 uMF_mid;\n' +
-    'uniform vec3 uMF_far;\n' +
-    'uniform float uMF_useMid;\n' +
-    'uniform vec3 uMF_rim;\n' +
-    'uniform float uMF_rimStrength;\n' +
-    'uniform float uMF_driftSpeed;\n' +
     'uniform float uMF_time;\n' +
-    'uniform float uMF_minDepth;\n' +
-    'uniform float uMF_maxDepth;\n' +
     // Rodrigues rotation around the luminance axis (1,1,1) — cheap hue shift
-    // that preserves perceived brightness; used by the temporal-drift palette.
+    // that preserves perceived brightness.
     'vec3 _hueShift(vec3 c, float a) {\n' +
     '  vec3 k = vec3(0.57735);\n' +
     '  float cs = cos(a); float sn = sin(a);\n' +
@@ -290,32 +199,17 @@ bustMaterial.onBeforeCompile = (shader) => {
     shader.fragmentShader.replace(
       '#include <colorspace_fragment>',
       `
-       float _t = clamp((vDepth - uMF_minDepth) / (uMF_maxDepth - uMF_minDepth), 0.0, 1.0);
-       // smoothstep() eases the two linear-mix transitions so there's no
-       // visible seam at the stops — big upgrade over raw linear mix.
-       vec3 _depthColor;
-       if (uMF_useMid > 0.5) {
-         if (_t < 0.5) {
-           _depthColor = mix(uMF_near, uMF_mid, smoothstep(0.0, 1.0, _t * 2.0));
-         } else {
-           _depthColor = mix(uMF_mid, uMF_far, smoothstep(0.0, 1.0, (_t - 0.5) * 2.0));
-         }
-       } else {
-         _depthColor = mix(uMF_near, uMF_far, smoothstep(0.0, 1.0, _t));
-       }
-       // Optional fresnel rim: surfaces whose normal is perpendicular to
-       // view (silhouette edges) get the rim color mixed in. Power-2 keeps
-       // the rim wider so it's clearly visible instead of hairline.
-       if (uMF_rimStrength > 0.0) {
-         float _facing = abs(normalize(vViewNormal).z);
-         float _rim = pow(1.0 - _facing, 2.0);
-         _depthColor = mix(_depthColor, uMF_rim, _rim * uMF_rimStrength);
-       }
-       // Optional temporal hue drift — slow rotation around luma axis.
-       if (uMF_driftSpeed > 0.0) {
-         _depthColor = _hueShift(_depthColor, uMF_time * uMF_driftSpeed);
-       }
-       gl_FragColor.rgb = _depthColor;
+       // Linear-space vec3 constants = sRGB hex × gamma 2.2 decode.
+       const vec3 _near        = vec3(1.0000, 0.3887, 0.3184); // #FFA595
+       const vec3 _far         = vec3(0.0101, 0.00017, 0.00006); // #1A0201
+       const float _minDepth   = 5.70;
+       const float _maxDepth   = 6.50;
+       const float _driftSpeed = 0.12; // rad/s of hue rotation
+
+       float _t = clamp((vDepth - _minDepth) / (_maxDepth - _minDepth), 0.0, 1.0);
+       vec3 _color = mix(_near, _far, smoothstep(0.0, 1.0, _t));
+       _color = _hueShift(_color, uMF_time * _driftSpeed);
+       gl_FragColor.rgb = _color;
        #include <colorspace_fragment>`
     );
 };
@@ -366,33 +260,16 @@ const FRAME_MS = 1000 / 30;
 let rafId = 0;
 let running = true;
 let last = 0;
-
-// ---- Perf instrumentation (remove when done debugging) ----
-// One-time init snapshot — copy along with the per-second lines below.
-console.log(
-  `[init] canvas=${CANVAS_W}×${CANVAS_H} ` +
-  `viewport=${window.innerWidth}×${window.innerHeight} ` +
-  `dpr=${window.devicePixelRatio} ` +
-  `cell=${CELL_W}×${CELL_H} ` +
-  `ua="${navigator.userAgent}"`
-);
-let perfRafCount = 0;
-const perfRenderTimes = [];
-let perfWindowStart = 0;
-// -----------------------------------------------------------
-
 function animate(now) {
   if (!running) return;
   rafId = requestAnimationFrame(animate);
-  perfRafCount++; // instrumentation: RAF wake-ups (untouched by the throttle)
   if (now - last < FRAME_MS) return;
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
   if (bust) bust.rotation.y += 0.2 * dt; // ~0.2 rad/s — slow contemplative spin, framerate-independent
-  paletteState.time.value = now * 0.001; // seconds — feeds the temporal-drift palette
+  uTime.value = now * 0.001; // seconds — drives the hue drift
   const cvs = renderer.domElement;
   if (cvs.width > 0 && cvs.height > 0) {
-    const t0 = performance.now(); // instrumentation
     try {
       // Pass 1: bust to offscreen render target
       renderer.setRenderTarget(renderTarget);
@@ -401,35 +278,6 @@ function animate(now) {
       renderer.setRenderTarget(null);
       renderer.render(postScene, postCamera);
     } catch { /* transient size race */ }
-    perfRenderTimes.push(performance.now() - t0);
-  }
-
-  // Instrumentation: once-per-second aggregate
-  if (perfWindowStart === 0) perfWindowStart = now;
-  if (now - perfWindowStart >= 1000) {
-    const elapsed = (now - perfWindowStart) / 1000;
-    const rafFps = (perfRafCount / elapsed).toFixed(1);
-    const renders = perfRenderTimes.length;
-    const renderFps = (renders / elapsed).toFixed(1);
-    let sum = 0, max = 0, min = Infinity;
-    for (const t of perfRenderTimes) {
-      sum += t;
-      if (t > max) max = t;
-      if (t < min) min = t;
-    }
-    const avg = renders ? (sum / renders).toFixed(1) : '—';
-    const minStr = renders ? min.toFixed(1) : '—';
-    const maxStr = renders ? max.toFixed(1) : '—';
-    const cellsX = Math.floor(CANVAS_W / CELL_W);
-    const cellsY = Math.floor(CANVAS_H / CELL_H);
-    console.log(
-      `[perf] raf=${rafFps}fps  render=${renderFps}fps  ` +
-      `gpu.render avg=${avg}ms min=${minStr}ms max=${maxStr}ms  ` +
-      `grid=${cellsX}×${cellsY}=${cellsX*cellsY}`
-    );
-    perfRafCount = 0;
-    perfRenderTimes.length = 0;
-    perfWindowStart = now;
   }
 }
 rafId = requestAnimationFrame(animate);
