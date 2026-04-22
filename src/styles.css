@@ -53,11 +53,11 @@ html, body {
 }
 
 #header h1 {
-  margin: 0 0 40px 0;
+  margin: 0;
   padding: 0;
-  font-size: 12px;
+  font-size: 28px;
   font-weight: 400;
-  letter-spacing: 0.5em;
+  letter-spacing: 0.35em;
   text-transform: uppercase;
   color: var(--fg);
 }
@@ -68,31 +68,6 @@ html, body {
   font-weight: 400;
   letter-spacing: 0;
   margin: 0 0.15em;
-}
-
-#header .epigraph {
-  margin: 0;
-  padding: 0;
-  border-left: 1px solid var(--muted);
-  padding-left: 20px;
-}
-
-#header .epigraph p {
-  margin: 0 0 14px 0;
-  font-size: 15px;
-  line-height: 1.55;
-  font-style: italic;
-  font-weight: 400;
-  color: var(--fg);
-}
-
-#header .epigraph cite {
-  display: block;
-  font-size: 9px;
-  font-style: normal;
-  letter-spacing: 0.45em;
-  text-transform: uppercase;
-  color: var(--muted);
 }
 
 #loading {
