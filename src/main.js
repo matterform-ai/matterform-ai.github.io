@@ -28,7 +28,7 @@ const BUST_ASPECT = 0.65;
 // At ~2000×3080 on a 1080p display that's ~6 MP of fragment work per frame,
 // still <2 ms on any modern GPU.
 const CANVAS_H = Math.max(
-  Math.min(3080, Math.floor(Math.min(window.innerWidth, window.innerHeight) * 3.4)),
+  Math.min(3080, Math.floor(Math.max(window.innerWidth, window.innerHeight) * 2.2)),
   800
 );
 const CANVAS_W = Math.round(CANVAS_H * BUST_ASPECT);
@@ -148,6 +148,16 @@ const postMaterial = new THREE.ShaderMaterial({
       // Luminance drives char-density pick; invert:false semantics (bright = space, dark = '@')
       float lum = dot(cellColor, vec3(0.3, 0.59, 0.11));
       float charIdx = clamp(floor((1.0 - lum) * charCount), 0.0, charCount - 1.0);
+      // Static paper-grain texture: in background-dominated cells (cream with
+      // no bust contribution), a cheap hash of the cell grid index sprinkles
+      // a very sparse dark glyph — keeps the ASCII aesthetic alive in the
+      // empty regions of the viewport so they don't read as flat color blocks.
+      vec2 cellIdx = floor(fragCoord / cellSize);
+      float h = fract(sin(dot(cellIdx, vec2(127.1, 311.7))) * 43758.5453);
+      float bgMask = smoothstep(0.92, 0.98, lum);
+      // glyph 1 ('.') in ~3% of cells, glyph 2 (',') in ~1.5%
+      float noiseCharIdx = step(0.97, h) * 1.0 + step(0.985, h) * 1.0;
+      charIdx = mix(charIdx, noiseCharIdx, bgMask * step(0.97, h));
       // Position within this cell, 0..1
       vec2 cellLocal = (fragCoord - cellOrigin) / cellSize;
       // Map to char atlas U (one char per slot)
