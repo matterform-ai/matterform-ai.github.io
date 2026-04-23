@@ -267,6 +267,10 @@ const loader = new GLTFLoader();
       const postCenter = postBox.getCenter(new THREE.Vector3());
       bust.position.sub(postCenter);
 
+      // Start the auto-spin with the face toward the camera (GLB's default
+      // front is -Z away from us; a half-turn brings the face forward).
+      bust.rotation.y = Math.PI;
+
       scene.add(bust);
       loading.style.display = 'none';
     }, (err) => {
