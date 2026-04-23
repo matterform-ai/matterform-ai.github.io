@@ -51,6 +51,14 @@ renderer.setPixelRatio(1);
 renderer.setSize(CANVAS_W, CANVAS_H);
 stage.appendChild(renderer.domElement);
 
+// Size the stage to just enclose the 45°-rotated bust silhouette. The bust's
+// unrotated bbox in the canvas is ≈ 0.40·H × 0.70·H, so its on-screen bbox
+// after rotation is (0.40+0.70)/√2 ≈ 0.78·H; 0.85·H leaves a small vertical
+// margin. Horizontal bleed still runs off the viewport edges (clipped by
+// body's overflow-x). This makes the page taller than one viewport, so iOS
+// Safari can collapse its bottom chrome on scroll.
+stage.style.height = `${Math.ceil(CANVAS_H * 0.85)}px`;
+
 // ASCII ramp from darkest (space) to brightest (#).
 const chars = ' .,:;i1tfLCG08@';
 
