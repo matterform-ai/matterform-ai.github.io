@@ -7,9 +7,7 @@
 html, body {
   margin: 0;
   padding: 0;
-  height: 100%;
   background: var(--bg);
-  overflow: hidden;
   font-family: 'Courier New', ui-monospace, monospace;
   color: var(--fg);
 }
@@ -18,7 +16,7 @@ html, body {
   position: fixed;
   inset: 0;
   overflow: hidden; /* clip the offscreen lower half of the canvas */
-  touch-action: none; /* own the drag gesture — no scroll/zoom interference on iOS */
+  touch-action: pan-y; /* let vertical scroll pass through; we still own horizontal drags for rotation */
   cursor: grab;
 }
 #stage:active { cursor: grabbing; }
@@ -81,6 +79,30 @@ html, body {
   z-index: 5;
 }
 
+
+/* Contact section below the hero. Margin-top pushes it a full viewport
+   down so the hero reads as a complete first screen, and having any
+   content past 100vh is what finally lets iOS Safari auto-hide its
+   chrome on scroll. Opaque bg covers the fixed bust/header as the user
+   scrolls over them. */
+.contact {
+  position: relative;
+  margin-top: 100vh;
+  padding: 96px 24px calc(96px + env(safe-area-inset-bottom)) 24px;
+  background: var(--bg);
+  text-align: center;
+  z-index: 15;
+}
+
+.contact a {
+  color: var(--fg);
+  text-decoration: none;
+  font-family: 'Times New Roman', Georgia, serif;
+  font-size: 20px;
+  letter-spacing: 0.12em;
+  border-bottom: 1px solid var(--muted);
+  padding-bottom: 4px;
+}
 
 /* Subtle vignette — softened for the light cream background */
 body::after {
