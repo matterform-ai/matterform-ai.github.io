@@ -15,8 +15,7 @@ html, body {
 #stage {
   position: relative;
   width: 100%;
-  height: 100vh;
-  height: 100dvh; /* dynamic viewport so the hero never exceeds the visible area on iOS */
+  height: 100vh; /* large viewport — lets the bust fill behind Safari chrome instead of being cropped above it */
   overflow: hidden; /* clip the offscreen lower half of the canvas */
   touch-action: pan-y; /* let vertical scroll pass through; we still own horizontal drags for rotation */
   cursor: grab;
