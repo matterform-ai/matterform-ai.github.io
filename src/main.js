@@ -59,8 +59,8 @@ stage.appendChild(renderer.domElement);
 // Safari can collapse its bottom chrome on scroll.
 stage.style.height = `${Math.ceil(CANVAS_H * 0.85)}px`;
 
-// ASCII ramp from darkest (space) to brightest (#).
-const chars = ' .,:;i1tfLCG08@';
+// ASCII ramp from brightest (l) to darkest (W); alphanumeric only.
+const chars = 'lij1tfvcLCG08MW';
 
 // ---- GPU ASCII POST-PROCESSING -----------------------------------------
 // 1) Render the bust to an offscreen target (renderTarget).
@@ -165,7 +165,7 @@ const postMaterial = new THREE.ShaderMaterial({
       float h = fract(sin(dot(cellIdx, vec2(127.1, 311.7))) * 43758.5453);
       float bgMask = smoothstep(0.80, 0.88, lum);
       float noiseTrigger = bgMask * step(0.96, h);
-      // glyph 1 ('.') in the top ~4% of cells, glyph 2 (',') in the top ~2%
+      // glyph 1 ('i') in the top ~4% of cells, glyph 2 ('j') in the top ~2%
       float noiseCharIdx = step(0.96, h) * 1.0 + step(0.98, h) * 1.0;
       charIdx = mix(charIdx, noiseCharIdx, noiseTrigger);
       // Position within this cell, 0..1
