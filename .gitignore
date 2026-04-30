@@ -4,4 +4,4 @@ dist/
 *.log
 .env
 .env.local
-# bun.lock / bun.lockb are intentionally tracked — CI uses --frozen-lockfile.
+# bun.lock / bun.lockb are intentionally tracked - CI uses --frozen-lockfile.
