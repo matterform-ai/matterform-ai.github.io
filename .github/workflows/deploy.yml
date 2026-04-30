@@ -16,7 +16,7 @@ permissions:
   pages: write
   id-token: write
 
-# Serialize deploys - don't cancel an in-flight deploy when a new push arrives.
+# Serialize deploys — don't cancel an in-flight deploy when a new push arrives.
 concurrency:
   group: pages
   cancel-in-progress: false

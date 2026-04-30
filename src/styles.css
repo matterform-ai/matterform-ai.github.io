@@ -14,7 +14,7 @@ html, body {
 }
 
 /* Stage is an in-flow block sized in JS to just enclose the rotated bust
-   silhouette -- the bust no longer bleeds off the bottom edge. Horizontal
+   silhouette — the bust no longer bleeds off the bottom edge. Horizontal
    bleed runs off the viewport left/right (clipped by body's overflow-x).
    Canvas is centered via flex so no absolute positioning is needed. */
 #stage {
@@ -34,7 +34,7 @@ html, body {
   transform: rotate(45deg);
 }
 
-/* Editorial masthead -- in-flow block at the top of the page; the bust
+/* Editorial masthead — in-flow block at the top of the page; the bust
    section follows below, then the contact link. */
 #header {
   padding: calc(56px + env(safe-area-inset-top)) calc(64px + env(safe-area-inset-right)) 0 calc(64px + env(safe-area-inset-left));
@@ -53,7 +53,7 @@ html, body {
   max-width: 460px;
 }
 
-/* Italic ampersand -- typographic tradition; reads warmer than a roman &. */
+/* Italic ampersand — typographic tradition; reads warmer than a roman &. */
 #header h1 .amp {
   font-style: italic;
   font-weight: 400;
@@ -73,7 +73,7 @@ html, body {
 }
 
 
-/* Contact section flows naturally after the hero -- user must scroll
+/* Contact section flows naturally after the hero — user must scroll
    past the bust to reach it. */
 .contact {
   padding: 96px 24px calc(96px + env(safe-area-inset-bottom)) 24px;
@@ -89,7 +89,7 @@ html, body {
   letter-spacing: 0.12em;
 }
 
-/* Subtle vignette -- softened for the light cream background */
+/* Subtle vignette — softened for the light cream background */
 body::after {
   content: "";
   position: fixed;

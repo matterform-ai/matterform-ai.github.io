@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import MODEL_URL from '../aristotle.glb' with { type: 'file' };
-// AsciiEffect is no longer used -- we do the ASCII conversion on the GPU in a
+// AsciiEffect is no longer used — we do the ASCII conversion on the GPU in a
 // post-processing shader pass instead. See the char atlas + postMaterial
 // setup below. The DOM-span approach cost ~70ms/frame in layout+paint on
 // Retina displays; GPU post-process is ~2ms/frame for the same result.
@@ -16,16 +16,16 @@ scene.background = new THREE.Color(0xeeeee4);
 
 // Canvas is a TALL RECTANGLE tightly matching the bust's silhouette (~0.65
 // w/h) instead of a square. A square canvas wasted ~35% of its cells on
-// empty cream margins flanking the bust -- all of which went through the
-// per-frame innerHTML rebuild. Bust bbox is ~1.35 x 2.6 x 1.49 world
+// empty cream margins flanking the bust — all of which went through the
+// per-frame innerHTML rebuild. Bust bbox is ~1.35 × 2.6 × 1.49 world
 // units; the worst-case horizontal silhouette during Y-rotation is
-// sqrt(x^2 + z^2) ~= 2.01 as a pure bbox, ~1.7 for the actual mesh shape.
-// 1.7 / 2.6 ~= 0.65.
+// √(x² + z²) ≈ 2.01 as a pure bbox, ~1.7 for the actual mesh shape.
+// 1.7 / 2.6 ≈ 0.65.
 const BUST_ASPECT = 0.65;
-// 2x previous size. Canvas is positioned so its vertical center sits on the
-// viewport's bottom edge -- the upper half of the bust is visible rising up
+// 2× previous size. Canvas is positioned so its vertical center sits on the
+// viewport's bottom edge — the upper half of the bust is visible rising up
 // from the bottom of the page, the lower half is clipped offscreen below.
-// At ~2000x3080 on a 1080p display that's ~6 MP of fragment work per frame,
+// At ~2000×3080 on a 1080p display that's ~6 MP of fragment work per frame,
 // still <2 ms on any modern GPU.
 const CANVAS_H = Math.max(
   Math.min(3080, Math.floor(Math.max(window.innerWidth, window.innerHeight) * 2.2)),
@@ -39,21 +39,21 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   1000
 );
-// Camera distance unchanged -- sizing is done via canvas dimensions, not
+// Camera distance unchanged — sizing is done via canvas dimensions, not
 // by pulling the camera in (which would crop the model).
 camera.position.set(0, 0, 6.5);
 
-// antialias: false -- post-process samples at cell center anyway, MSAA on the
+// antialias: false — post-process samples at cell center anyway, MSAA on the
 // bust render target is wasted. setPixelRatio(1) keeps the framebuffer
-// backing store in CSS pixels (avoids the Retina 4x memory / fill cost).
+// backing store in CSS pixels (avoids the Retina 4× memory / fill cost).
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 renderer.setPixelRatio(1);
 renderer.setSize(CANVAS_W, CANVAS_H);
 stage.appendChild(renderer.domElement);
 
-// Size the stage to just enclose the 45deg-rotated bust silhouette. The bust's
-// unrotated bbox in the canvas is ~= 0.40*H x 0.70*H, so its on-screen bbox
-// after rotation is (0.40+0.70)/sqrt(2) ~= 0.78*H; 0.85*H leaves a small vertical
+// Size the stage to just enclose the 45°-rotated bust silhouette. The bust's
+// unrotated bbox in the canvas is ≈ 0.40·H × 0.70·H, so its on-screen bbox
+// after rotation is (0.40+0.70)/√2 ≈ 0.78·H; 0.85·H leaves a small vertical
 // margin. Horizontal bleed still runs off the viewport edges (clipped by
 // body's overflow-x). This makes the page taller than one viewport, so iOS
 // Safari can collapse its bottom chrome on scroll.
@@ -67,10 +67,10 @@ const chars = ' .,:;i1tfLCG08@';
 // 2) Draw a full-screen quad over the real canvas; its fragment shader reads
 //    the bust texture, partitions the framebuffer into cells, picks a char
 //    from the atlas based on per-cell luminance, and emits colored char
-//    pixels. Everything stays on the GPU -- no getImageData, no DOM spans.
+//    pixels. Everything stays on the GPU — no getImageData, no DOM spans.
 // Smaller cells = smaller, denser characters. Each pixel only costs a
 // handful of texture samples + arithmetic, so going tiny is essentially free.
-// 5x8 on a 1000x1540 canvas -> ~200 x 192 ~= 38k chars on screen.
+// 5×8 on a 1000×1540 canvas → ~200 × 192 ≈ 38k chars on screen.
 const CELL_W = 5;  // char cell size in CSS pixels (width)
 const CELL_H = 8;  // char cell size in CSS pixels (height)
 
@@ -78,7 +78,7 @@ const renderTarget = new THREE.WebGLRenderTarget(CANVAS_W, CANVAS_H, {
   minFilter: THREE.NearestFilter,
   magFilter: THREE.NearestFilter,
   // Default (LinearSRGBColorSpace): the bust's shader writes its pre-encode
-  // linear colors directly, no sRGB round-trip -- cleaner math in the post
+  // linear colors directly, no sRGB round-trip — cleaner math in the post
   // shader, at the cost of one manual linearToSRGB at output.
 });
 
@@ -137,10 +137,10 @@ const postMaterial = new THREE.ShaderMaterial({
     uniform float charCount;
     uniform vec3 bgColor;
     varying vec2 vUv;
-    // Manual sRGB encode at the very end -- a bare ShaderMaterial does NOT
+    // Manual sRGB encode at the very end — a bare ShaderMaterial does NOT
     // include Three's <colorspace_fragment>, so without this the linear
     // values we compute get displayed raw and look dim. Using simple gamma
-    // 2.2 (vs the piecewise sRGB curve) -- both visually indistinguishable
+    // 2.2 (vs the piecewise sRGB curve) — both visually indistinguishable
     // for opaque colors.
     vec3 linearToSRGB_(vec3 c) {
       return pow(max(c, vec3(0.0)), vec3(1.0/2.2));
@@ -158,7 +158,7 @@ const postMaterial = new THREE.ShaderMaterial({
       float charIdx = clamp(floor((1.0 - lum) * charCount), 0.0, charCount - 1.0);
       // Static paper-grain texture: in background-dominated cells (cream with
       // no bust contribution), a cheap hash of the cell grid index sprinkles
-      // a very sparse muted glyph -- keeps the ASCII aesthetic alive in the
+      // a very sparse muted glyph — keeps the ASCII aesthetic alive in the
       // empty regions of the viewport so they don't read as flat color blocks.
       // Threshold on the linear-space cream luminance (~0.85), not sRGB.
       vec2 cellIdx = floor(fragCoord / cellSize);
@@ -173,7 +173,7 @@ const postMaterial = new THREE.ShaderMaterial({
       // Map to char atlas U (one char per slot)
       vec2 charUV = vec2((charIdx + cellLocal.x) / charCount, cellLocal.y);
       float charMask = texture2D(tChars, charUV).a;
-      // bgColor is sRGB (raw display values). cellColor from RT is linear --
+      // bgColor is sRGB (raw display values). cellColor from RT is linear —
       // encode only the bust color to sRGB, then mix directly in sRGB space.
       // For noise cells, override to a muted brown so the glyph is visible
       // against the cream background instead of cream-on-cream.
@@ -194,8 +194,8 @@ postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMaterial));
 
 // Palette: salmon-near + black-far with slow hue drift. The Rodrigues
 // rotation preserves luma, so the dramatic brightness range stays intact
-// while the hue cycles through the spectrum over ~52 s (full 2*pi / 0.12).
-// All palette parameters are baked into the shader as constants -- the only
+// while the hue cycles through the spectrum over ~52 s (full 2π / 0.12).
+// All palette parameters are baked into the shader as constants — the only
 // runtime uniform is the clock tick below.
 const uTime = { value: 0 };
 
@@ -213,7 +213,7 @@ bustMaterial.onBeforeCompile = (shader) => {
   shader.fragmentShader =
     'varying float vDepth;\n' +
     'uniform float uMF_time;\n' +
-    // Rodrigues rotation around the luminance axis (1,1,1) -- cheap hue shift
+    // Rodrigues rotation around the luminance axis (1,1,1) — cheap hue shift
     // that preserves perceived brightness.
     'vec3 _hueShift(vec3 c, float a) {\n' +
     '  vec3 k = vec3(0.57735);\n' +
@@ -223,7 +223,7 @@ bustMaterial.onBeforeCompile = (shader) => {
     shader.fragmentShader.replace(
       '#include <colorspace_fragment>',
       `
-       // Linear-space vec3 constants = sRGB hex * gamma 2.2 decode.
+       // Linear-space vec3 constants = sRGB hex × gamma 2.2 decode.
        const vec3 _near        = vec3(1.0000, 0.3887, 0.3184); // #FFA595
        const vec3 _far         = vec3(0.0101, 0.00017, 0.00006); // #1A0201
        const float _minDepth   = 5.70;
@@ -275,11 +275,11 @@ const loader = new GLTFLoader();
       loading.style.display = 'none';
     }, (err) => {
       console.error('Parse failed:', err);
-      loading.textContent = 'PARSE FAILED -- check console';
+      loading.textContent = 'PARSE FAILED — check console';
     });
   } catch (err) {
     console.error('Fetch failed:', err);
-    loading.textContent = 'FETCH FAILED -- check console';
+    loading.textContent = 'FETCH FAILED — check console';
   }
 })();
 
@@ -287,7 +287,7 @@ const loader = new GLTFLoader();
 // delta rotates the bust directly. On release, the recent drag velocity
 // becomes angular velocity, which then damps back toward AUTO_SPIN_RATE so
 // the idle contemplative spin resumes on its own.
-const AUTO_SPIN_RATE = 0.2;   // rad/s -- idle spin
+const AUTO_SPIN_RATE = 0.2;   // rad/s — idle spin
 const DRAG_SENSITIVITY = 0.01; // rad per CSS pixel of horizontal drag
 const SPIN_DAMP = 1.2;         // higher = faster return to AUTO_SPIN_RATE
 const MAX_FLING = 12;          // rad/s cap on post-release velocity
@@ -340,14 +340,14 @@ function animate(now) {
     angVel += (AUTO_SPIN_RATE - angVel) * Math.min(1, dt * SPIN_DAMP);
     bust.rotation.y += angVel * dt;
   }
-  uTime.value = now * 0.001; // seconds -- drives the hue drift
+  uTime.value = now * 0.001; // seconds — drives the hue drift
   const cvs = renderer.domElement;
   if (cvs.width > 0 && cvs.height > 0) {
     try {
       // Pass 1: bust to offscreen render target
       renderer.setRenderTarget(renderTarget);
       renderer.render(scene, camera);
-      // Pass 2: full-screen quad with ASCII post-process shader -> real canvas
+      // Pass 2: full-screen quad with ASCII post-process shader → real canvas
       renderer.setRenderTarget(null);
       renderer.render(postScene, postCamera);
     } catch { /* transient size race */ }
