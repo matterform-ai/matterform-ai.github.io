@@ -53,14 +53,6 @@ html, body {
   max-width: 460px;
 }
 
-/* Italic ampersand — typographic tradition; reads warmer than a roman &. */
-#header h1 .amp {
-  font-style: italic;
-  font-weight: 400;
-  letter-spacing: 0;
-  margin: 0 0.15em;
-}
-
 #loading {
   position: fixed;
   top: 50%;
