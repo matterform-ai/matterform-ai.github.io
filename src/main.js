@@ -347,6 +347,18 @@ const endDrag = () => {
 stage.addEventListener('pointerup', endDrag);
 stage.addEventListener('pointercancel', endDrag);
 
+// Vertical page scroll also rotates the bust — each CSS pixel scrolled turns
+// it a little, layered on top of the idle spin. The browser's own scroll
+// momentum supplies the inertia, so no separate fling is needed here.
+const SCROLL_SENSITIVITY = 0.005; // rad of bust spin per CSS pixel scrolled
+let lastScrollY = window.scrollY;
+const onScroll = () => {
+  const y = window.scrollY;
+  if (bust) bust.rotation.y += (y - lastScrollY) * SCROLL_SENSITIVITY;
+  lastScrollY = y;
+};
+window.addEventListener('scroll', onScroll, { passive: true });
+
 // Throttle to ~30 fps (33 ms frame budget).
 const FRAME_MS = 1000 / 30;
 let rafId = 0;
@@ -393,6 +405,7 @@ if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     running = false;
     cancelAnimationFrame(rafId);
+    window.removeEventListener('scroll', onScroll);
     renderTarget.dispose();
     charAtlas.dispose();
     postMaterial.dispose();
