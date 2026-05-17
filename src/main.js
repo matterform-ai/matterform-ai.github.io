@@ -59,14 +59,12 @@ stage.appendChild(renderer.domElement);
 // Safari can collapse its bottom chrome on scroll.
 stage.style.height = `${Math.ceil(CANVAS_H * 0.85)}px`;
 
-// Brand symbol ramp, slot order brightest→darkest input. Shape changes in
-// coarse bands while color steps a fine gradient, so each shape spans several
-// shades:
-//   0 serif "O" · 1-3 filled square · 4-5 empty square
-//   · 6-7 solid circle · 8 small circle · 9 space
-// Multiple slots reuse a glyph shape, differing only in color (see paletteFor).
+// Brand symbol ramp, slot order brightest→darkest input. Three shapes; the
+// color steps a fine gradient so the squares and circles each span 10 shades:
+//   0 serif "O" · 1-10 empty square · 11-20 solid circle · 21 space
+// Many slots reuse a glyph shape, differing only in color (see rampColor).
 // The post shader maps each cell's luminance to a slot and tints it.
-const GLYPH_COUNT = 10;
+const GLYPH_COUNT = 22;
 
 // ---- GPU SYMBOL POST-PROCESSING ----------------------------------------
 // 1) Render the bust to an offscreen target (renderTarget).
@@ -107,23 +105,19 @@ function makeCharAtlas() {
   const cy = S / 2;
   const cx = (slot) => slot * S + S / 2;
 
-  // Rounded square, pre-rotated 45°. The canvas is CSS-rotated 45°, so a square
-  // drawn at 45° lands at 90° on screen — i.e. reads as an upright square.
-  // fill=false strokes only, leaving the interior transparent so the post
-  // shader fills it with the navy bg ("hollow"/"empty" square).
-  const square = (slot, fill) => {
+  // Empty (hollow) rounded square, pre-rotated 45°. The canvas is CSS-rotated
+  // 45°, so a square drawn at 45° lands at 90° on screen — i.e. reads as an
+  // upright square. Stroke only: the interior stays transparent so the post
+  // shader fills it with the navy bg.
+  const square = (slot) => {
     const side = S * 0.66;
     ctx.save();
     ctx.translate(cx(slot), cy);
     ctx.rotate(Math.PI / 4);
     ctx.beginPath();
     ctx.roundRect(-side / 2, -side / 2, side, side, S * 0.11);
-    if (fill) {
-      ctx.fill();
-    } else {
-      ctx.lineWidth = S * 0.14;
-      ctx.stroke();
-    }
+    ctx.lineWidth = S * 0.14;
+    ctx.stroke();
     ctx.restore();
   };
   const circle = (slot, r) => {
@@ -144,15 +138,12 @@ function makeCharAtlas() {
   ctx.fillText('O', 0, 0);
   ctx.restore();
 
-  square(1, true);     // slot 1 — filled square (pale coral)
-  square(2, true);     // slot 2 — filled square (coral)
-  square(3, true);     // slot 3 — filled square (rose)
-  square(4, false);    // slot 4 — empty square (mauve)
-  square(5, false);    // slot 5 — empty square (dusty purple)
-  circle(6, S * 0.28); // slot 6 — solid circle (purple)
-  circle(7, S * 0.28); // slot 7 — solid circle (indigo)
-  circle(8, S * 0.13); // slot 8 — small circle (dark blue)
-  // slot 9 — space: left empty
+  // slots 1-10 — empty squares; slots 11-20 — solid circles. The shape
+  // repeats; the post shader gives each slot its own gradient color so the
+  // squares and circles each span 10 shades (see rampColor).
+  for (let s = 1; s <= 10; s++) square(s);
+  for (let s = 11; s <= 20; s++) circle(s, S * 0.28);
+  // slot 21 — space: left empty
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.magFilter = THREE.LinearFilter;
@@ -191,20 +182,25 @@ const postMaterial = new THREE.ShaderMaterial({
     uniform float charCount;
     uniform vec3 bgColor;
     varying vec2 vUv;
-    // Brand color for each glyph slot, sRGB display values. A step()/mix
-    // chain rather than an indexed array — portable across GLSL ES versions
-    // and the indices are compile-time constants anyway.
-    vec3 paletteFor(float idx) {
-      vec3 c = vec3(1.0, 1.0, 1.0);                                          // 0 serif "O"     — white
-      c = mix(c, vec3(246.0/255.0, 192.0/255.0, 181.0/255.0), step(0.5, idx)); // 1 filled square — pale coral
-      c = mix(c, vec3(240.0/255.0, 133.0/255.0, 133.0/255.0), step(1.5, idx)); // 2 filled square — coral
-      c = mix(c, vec3(212.0/255.0, 128.0/255.0, 142.0/255.0), step(2.5, idx)); // 3 filled square — rose
-      c = mix(c, vec3(182.0/255.0, 126.0/255.0, 149.0/255.0), step(3.5, idx)); // 4 empty square  — mauve
-      c = mix(c, vec3(148.0/255.0, 116.0/255.0, 143.0/255.0), step(4.5, idx)); // 5 empty square  — dusty purple
-      c = mix(c, vec3(110.0/255.0,  97.0/255.0, 130.0/255.0), step(5.5, idx)); // 6 solid circle  — purple
-      c = mix(c, vec3( 78.0/255.0,  79.0/255.0, 115.0/255.0), step(6.5, idx)); // 7 solid circle  — indigo
-      c = mix(c, vec3( 53.0/255.0,  71.0/255.0, 101.0/255.0), step(7.5, idx)); // 8 small circle  — dark blue
-      return c; // slot 9 (space) — unused, its glyph mask is empty
+    // Brand color gradient for the squares + circles, sRGB display values —
+    // pale coral → dark blue through 6 key colors via a clamped-mix chain
+    // (portable across GLSL ES versions). White is kept exclusive to the serif
+    // "O" highlight and applied separately in main().
+    vec3 rampColor(float t) {
+      vec3 c0 = vec3(0.965, 0.753, 0.710); // pale coral
+      vec3 c1 = vec3(0.941, 0.522, 0.522); // coral
+      vec3 c2 = vec3(0.831, 0.502, 0.557); // rose
+      vec3 c3 = vec3(0.714, 0.494, 0.584); // mauve
+      vec3 c4 = vec3(0.431, 0.380, 0.510); // purple
+      vec3 c5 = vec3(0.208, 0.278, 0.396); // dark blue
+      float s = clamp(t, 0.0, 1.0) * 5.0;
+      vec3 c = c0;
+      c = mix(c, c1, clamp(s,       0.0, 1.0));
+      c = mix(c, c2, clamp(s - 1.0, 0.0, 1.0));
+      c = mix(c, c3, clamp(s - 2.0, 0.0, 1.0));
+      c = mix(c, c4, clamp(s - 3.0, 0.0, 1.0));
+      c = mix(c, c5, clamp(s - 4.0, 0.0, 1.0));
+      return c;
     }
     void main() {
       vec2 fragCoord = vUv * resolution;
@@ -220,8 +216,13 @@ const postMaterial = new THREE.ShaderMaterial({
       // Map to the atlas U (one glyph per slot)
       vec2 charUV = vec2((charIdx + cellLocal.x) / charCount, cellLocal.y);
       float charMask = texture2D(tChars, charUV).a;
-      // bgColor and the palette are both sRGB display values — mix directly.
-      gl_FragColor = vec4(mix(bgColor, paletteFor(charIdx), charMask), 1.0);
+      // Slot 0 is the serif "O" — the pure-white highlight. Slots 1..20 are
+      // the squares + circles, spanning the colored gradient pale coral → dark
+      // blue (charCount-3 = 19 is the last colored slot's zero-based offset).
+      vec3 symColor = charIdx < 0.5
+        ? vec3(1.0)
+        : rampColor((charIdx - 1.0) / (charCount - 3.0));
+      gl_FragColor = vec4(mix(bgColor, symColor, charMask), 1.0);
     }
   `,
 });
@@ -250,7 +251,7 @@ bustMaterial.onBeforeCompile = (shader) => {
      // frontal wash — the shadow side is what gives the circle slots real
      // coverage. The bust turntable-spins through it, sweeping the highlight.
      // Half-Lambert (×0.5+0.5) maps the full surface to 0..1 and keeps the
-     // shadow side graded; used linearly so the 10 symbol slots spread evenly
+     // shadow side graded; used linearly so the 22 symbol slots spread evenly
      // across the bust instead of the shadow collapsing onto the last slots.
      vec3 _L = normalize(vec3(-0.85, 0.33, 0.30));
      float _shade = dot(normal, _L) * 0.5 + 0.5;
