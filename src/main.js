@@ -59,11 +59,14 @@ stage.appendChild(renderer.domElement);
 // Safari can collapse its bottom chrome on scroll.
 stage.style.height = `${Math.ceil(CANVAS_H * 0.85)}px`;
 
-// Brand symbol ramp, slot order brightest→darkest input:
-//   0 donut · 1 rounded square · 2 circle · 3 dot · 4 space
-// The post shader maps each cell's luminance to a slot and tints it with the
-// matching brand color.
-const GLYPH_COUNT = 5;
+// Brand symbol ramp, slot order brightest→darkest input. Shape changes in
+// coarse bands while color steps a fine gradient, so each shape spans several
+// shades:
+//   0 serif "O" · 1-3 filled square · 4-5 empty square
+//   · 6-7 solid circle · 8 small circle · 9 space
+// Multiple slots reuse a glyph shape, differing only in color (see paletteFor).
+// The post shader maps each cell's luminance to a slot and tints it.
+const GLYPH_COUNT = 10;
 
 // ---- GPU SYMBOL POST-PROCESSING ----------------------------------------
 // 1) Render the bust to an offscreen target (renderTarget).
@@ -73,7 +76,7 @@ const GLYPH_COUNT = 5;
 //    glyph pixels. Everything stays on the GPU — no getImageData, no DOM spans.
 // Smaller cells = smaller, denser symbols. Each pixel only costs a handful of
 // texture samples + arithmetic, so going tiny is essentially free. The cell is
-// SQUARE so the round glyphs (donut, circle, dot) stay round instead of being
+// SQUARE so the round glyphs (serif O, circles) stay round instead of being
 // stretched into ellipses. This is the main density knob — larger = chunkier,
 // fewer symbols; tune against the brand reference.
 const CELL_SIZE = 12; // symbol cell size in CSS pixels (square)
@@ -85,12 +88,12 @@ const renderTarget = new THREE.WebGLRenderTarget(CANVAS_W, CANVAS_H, {
   // shade here; the post shader reads it back as a luminance signal only.
 });
 
-// Glyph atlas: the five brand symbols drawn procedurally (not font glyphs) to
-// their own horizontal slot in a single canvas, then uploaded as a Three.js
-// texture. Each glyph is filled white — it is a pure shape mask, and the post
-// shader tints it with the matching brand color. The shader samples by
-// computing (charIdx + cellLocalX) / charCount as the U coord. Glyph radii are
-// tunable to match the brand reference (donut hole, square corner radius).
+// Glyph atlas: the brand symbols drawn to their own horizontal slot in a
+// single canvas, then uploaded as a Three.js texture. Each glyph is rendered
+// white — a pure shape mask — and the post shader tints it with the matching
+// brand color (so one shape can fill several slots at different colors). The
+// shader samples by computing (charIdx + cellLocalX) / charCount as the U
+// coord. Glyph metrics are tunable to match the reference.
 const ATLAS_CHAR_PX = 48; // generous; linear downsample handles small display sizes
 function makeCharAtlas() {
   const canvas = document.createElement('canvas');
@@ -99,40 +102,57 @@ function makeCharAtlas() {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = 'white';
+  ctx.strokeStyle = 'white';
   const S = ATLAS_CHAR_PX;
   const cy = S / 2;
   const cx = (slot) => slot * S + S / 2;
 
-  // slot 0 — donut: outer disc with a concentric hole punched out
-  ctx.beginPath();
-  ctx.arc(cx(0), cy, S * 0.42, 0, Math.PI * 2);
-  ctx.arc(cx(0), cy, S * 0.24, 0, Math.PI * 2, true);
-  ctx.fill('evenodd');
+  // Rounded square, pre-rotated 45°. The canvas is CSS-rotated 45°, so a square
+  // drawn at 45° lands at 90° on screen — i.e. reads as an upright square.
+  // fill=false strokes only, leaving the interior transparent so the post
+  // shader fills it with the navy bg ("hollow"/"empty" square).
+  const square = (slot, fill) => {
+    const side = S * 0.66;
+    ctx.save();
+    ctx.translate(cx(slot), cy);
+    ctx.rotate(Math.PI / 4);
+    ctx.beginPath();
+    ctx.roundRect(-side / 2, -side / 2, side, side, S * 0.11);
+    if (fill) {
+      ctx.fill();
+    } else {
+      ctx.lineWidth = S * 0.14;
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
+  const circle = (slot, r) => {
+    ctx.beginPath();
+    ctx.arc(cx(slot), cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  };
 
-  // slot 1 — rounded square. Pre-rotated 45° so it lands UPRIGHT on screen:
-  // the canvas itself is CSS-rotated 45°, which would otherwise turn an
-  // axis-aligned square into a diamond. Modest corner radius so it still
-  // reads as a square (not a circle) once downsampled to cell size.
-  const side = S * 0.66;
+  // slot 0 — serif uppercase "O". Pre-rotated -45° to cancel the canvas's +45°
+  // CSS rotation so it reads upright; drawn in the page's serif stack so it
+  // carries real typographic stroke contrast (not a geometric ring).
   ctx.save();
-  ctx.translate(cx(1), cy);
-  ctx.rotate(Math.PI / 4);
-  ctx.beginPath();
-  ctx.roundRect(-side / 2, -side / 2, side, side, S * 0.11);
-  ctx.fill();
+  ctx.translate(cx(0), cy);
+  ctx.rotate(-Math.PI / 4);
+  ctx.font = `${Math.round(S * 1.05)}px 'Times New Roman', Georgia, serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('O', 0, 0);
   ctx.restore();
 
-  // slot 2 — filled circle
-  ctx.beginPath();
-  ctx.arc(cx(2), cy, S * 0.26, 0, Math.PI * 2);
-  ctx.fill();
-
-  // slot 3 — small dot
-  ctx.beginPath();
-  ctx.arc(cx(3), cy, S * 0.12, 0, Math.PI * 2);
-  ctx.fill();
-
-  // slot 4 — space: left empty
+  square(1, true);     // slot 1 — filled square (pale coral)
+  square(2, true);     // slot 2 — filled square (coral)
+  square(3, true);     // slot 3 — filled square (rose)
+  square(4, false);    // slot 4 — empty square (mauve)
+  square(5, false);    // slot 5 — empty square (dusty purple)
+  circle(6, S * 0.28); // slot 6 — solid circle (purple)
+  circle(7, S * 0.28); // slot 7 — solid circle (indigo)
+  circle(8, S * 0.13); // slot 8 — small circle (dark blue)
+  // slot 9 — space: left empty
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.magFilter = THREE.LinearFilter;
@@ -175,11 +195,16 @@ const postMaterial = new THREE.ShaderMaterial({
     // chain rather than an indexed array — portable across GLSL ES versions
     // and the indices are compile-time constants anyway.
     vec3 paletteFor(float idx) {
-      vec3 c = vec3(1.0, 1.0, 1.0);                                          // 0 donut  — white
-      c = mix(c, vec3(240.0/255.0, 133.0/255.0, 133.0/255.0), step(0.5, idx)); // 1 square — coral
-      c = mix(c, vec3(111.0/255.0,  97.0/255.0, 120.0/255.0), step(1.5, idx)); // 2 circle — muted purple
-      c = mix(c, vec3( 58.0/255.0,  74.0/255.0,  99.0/255.0), step(2.5, idx)); // 3 dot    — dim slate
-      return c; // slot 4 (space) — unused, its glyph mask is empty
+      vec3 c = vec3(1.0, 1.0, 1.0);                                          // 0 serif "O"     — white
+      c = mix(c, vec3(246.0/255.0, 192.0/255.0, 181.0/255.0), step(0.5, idx)); // 1 filled square — pale coral
+      c = mix(c, vec3(240.0/255.0, 133.0/255.0, 133.0/255.0), step(1.5, idx)); // 2 filled square — coral
+      c = mix(c, vec3(212.0/255.0, 128.0/255.0, 142.0/255.0), step(2.5, idx)); // 3 filled square — rose
+      c = mix(c, vec3(182.0/255.0, 126.0/255.0, 149.0/255.0), step(3.5, idx)); // 4 empty square  — mauve
+      c = mix(c, vec3(148.0/255.0, 116.0/255.0, 143.0/255.0), step(4.5, idx)); // 5 empty square  — dusty purple
+      c = mix(c, vec3(110.0/255.0,  97.0/255.0, 130.0/255.0), step(5.5, idx)); // 6 solid circle  — purple
+      c = mix(c, vec3( 78.0/255.0,  79.0/255.0, 115.0/255.0), step(6.5, idx)); // 7 solid circle  — indigo
+      c = mix(c, vec3( 53.0/255.0,  71.0/255.0, 101.0/255.0), step(7.5, idx)); // 8 small circle  — dark blue
+      return c; // slot 9 (space) — unused, its glyph mask is empty
     }
     void main() {
       vec2 fragCoord = vUv * resolution;
@@ -188,7 +213,7 @@ const postMaterial = new THREE.ShaderMaterial({
       vec2 cellCenterUV = (cellOrigin + cellSize * 0.5) / resolution;
       // The bust render is grayscale — sample its shade once per cell.
       float lum = texture2D(tDiffuse, cellCenterUV).r;
-      // Luminance drives the slot pick: bright = donut (0), dark = space (last)
+      // Luminance drives the slot pick: bright = serif "O" (0), dark = space (last)
       float charIdx = clamp(floor((1.0 - lum) * charCount), 0.0, charCount - 1.0);
       // Position within this cell, 0..1
       vec2 cellLocal = (fragCoord - cellOrigin) / cellSize;
@@ -206,7 +231,7 @@ postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMaterial));
 // Scene lights are omitted — the onBeforeCompile hook below computes its own
 // single key-light Lambert term from the surface normal and writes a plain
 // grayscale. The post shader reads that shade as a luminance signal and maps
-// it to a brand symbol per cell (bright = donut, dark = space). A manual light
+// it to a brand symbol per cell (bright = serif "O", dark = space). A manual light
 // (rather than camera depth) is what gives the bust real form, so the symbol
 // ramp reads as a side-lit portrait instead of a depth bullseye.
 const bustMaterial = new THREE.MeshPhongMaterial({
@@ -220,14 +245,15 @@ bustMaterial.onBeforeCompile = (shader) => {
   shader.fragmentShader = shader.fragmentShader.replace(
     '#include <colorspace_fragment>',
     `
-     // Soft key light from the upper-left, fixed in view space — the bust
-     // turntable-spins through it, sweeping the highlight across the face.
-     // Half-Lambert (×0.5+0.5) keeps the shadow side gently graded instead
-     // of crushing it to a flat tone; the gamma biases mid-tones toward the
-     // coral square so white donuts stay reserved for true highlights.
-     vec3 _L = normalize(vec3(-0.6, 0.38, 0.62));
-     float _hl = dot(normal, _L) * 0.5 + 0.5;
-     float _shade = pow(_hl, 1.5);
+     // Key light from the left, fixed in view space. Mostly lateral (small z)
+     // so the bust has a genuine lit side and shadow side rather than a
+     // frontal wash — the shadow side is what gives the circle slots real
+     // coverage. The bust turntable-spins through it, sweeping the highlight.
+     // Half-Lambert (×0.5+0.5) maps the full surface to 0..1 and keeps the
+     // shadow side graded; used linearly so the 10 symbol slots spread evenly
+     // across the bust instead of the shadow collapsing onto the last slots.
+     vec3 _L = normalize(vec3(-0.85, 0.33, 0.30));
+     float _shade = dot(normal, _L) * 0.5 + 0.5;
      gl_FragColor.rgb = vec3(_shade);
      #include <colorspace_fragment>`
   );
