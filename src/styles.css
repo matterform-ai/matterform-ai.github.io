@@ -1,8 +1,7 @@
 :root {
-  --bg: #0b1f33;
-  --fg: #ffffff;
-  --muted: #7e8aa0;
-  --accent: #f08585;
+  --bg: #eeeee4;
+  --fg: #2a1a14;
+  --muted: #8a4a40;
 }
 
 html, body {
@@ -41,10 +40,6 @@ html, body {
   padding: calc(56px + env(safe-area-inset-top)) calc(64px + env(safe-area-inset-right)) 0 calc(64px + env(safe-area-inset-left));
   font-family: 'Times New Roman', Georgia, serif;
   color: var(--fg);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 28px;
 }
 
 #header h1 {
@@ -56,28 +51,6 @@ html, body {
   text-transform: uppercase;
   color: var(--fg);
   max-width: 460px;
-}
-
-/* Brand mark — serif "O" + hollow square, echoing the page's symbol shapes.
-   Monochrome in --fg so it reads as one piece with the wordmark. */
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex: none;
-}
-
-.logo-o {
-  font-size: 64px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.logo-square {
-  width: 42px;
-  height: 42px;
-  border: 6px solid var(--fg);
-  box-sizing: border-box;
 }
 
 #loading {
@@ -101,19 +74,19 @@ html, body {
 }
 
 .contact a {
-  color: var(--accent);
+  color: inherit;
   text-decoration: none;
   font-family: 'Times New Roman', Georgia, serif;
   font-size: 20px;
   letter-spacing: 0.12em;
 }
 
-/* Subtle vignette — edges darken into the deep navy background */
+/* Subtle vignette — softened for the light cream background */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(ellipse at center, transparent 55%, rgba(4, 10, 18, 0.55) 100%);
+  background: radial-gradient(ellipse at center, transparent 60%, rgba(239, 72, 60, 0.08) 100%);
   z-index: 20;
 }

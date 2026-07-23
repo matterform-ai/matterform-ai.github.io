@@ -10,9 +10,9 @@ const stage = document.getElementById('stage');
 const loading = document.getElementById('loading');
 
 const scene = new THREE.Scene();
-// Match the page background so cell sampling at bust edges blends into navy
-// (empty areas resolve to the lowest luminance → space glyph).
-scene.background = new THREE.Color(0x0b1f33);
+// Match the page background so AsciiEffect cell-averaging at bust edges
+// blends into cream (empty areas become space chars) instead of black.
+scene.background = new THREE.Color(0xeeeee4);
 
 // Canvas is a TALL RECTANGLE tightly matching the bust's silhouette (~0.65
 // w/h) instead of a square. A square canvas wasted ~35% of its cells on
@@ -59,92 +59,46 @@ stage.appendChild(renderer.domElement);
 // Safari can collapse its bottom chrome on scroll.
 stage.style.height = `${Math.ceil(CANVAS_H * 0.85)}px`;
 
-// Brand symbol ramp, slot order brightest→darkest input. Three shapes; the
-// color steps a fine gradient so the squares and circles each span 10 shades:
-//   0 serif "O" · 1-10 empty square · 11-20 solid circle · 21 space
-// Many slots reuse a glyph shape, differing only in color (see rampColor).
-// The post shader maps each cell's luminance to a slot and tints it.
-const GLYPH_COUNT = 22;
+// ASCII ramp from darkest (space) to brightest (#).
+const chars = ' .,:;i1tfLCG08@';
 
-// ---- GPU SYMBOL POST-PROCESSING ----------------------------------------
+// ---- GPU ASCII POST-PROCESSING -----------------------------------------
 // 1) Render the bust to an offscreen target (renderTarget).
 // 2) Draw a full-screen quad over the real canvas; its fragment shader reads
-//    the bust texture, partitions the framebuffer into cells, picks a glyph
-//    from the atlas based on per-cell luminance, and emits brand-colored
-//    glyph pixels. Everything stays on the GPU — no getImageData, no DOM spans.
-// Smaller cells = smaller, denser symbols. Each pixel only costs a handful of
-// texture samples + arithmetic, so going tiny is essentially free. The cell is
-// SQUARE so the round glyphs (serif O, circles) stay round instead of being
-// stretched into ellipses. This is the main density knob — larger = chunkier,
-// fewer symbols; tune against the brand reference.
-const CELL_SIZE = 12; // symbol cell size in CSS pixels (square)
+//    the bust texture, partitions the framebuffer into cells, picks a char
+//    from the atlas based on per-cell luminance, and emits colored char
+//    pixels. Everything stays on the GPU — no getImageData, no DOM spans.
+// Smaller cells = smaller, denser characters. Each pixel only costs a
+// handful of texture samples + arithmetic, so going tiny is essentially free.
+// 5×8 on a 1000×1540 canvas → ~200 × 192 ≈ 38k chars on screen.
+const CELL_W = 5;  // char cell size in CSS pixels (width)
+const CELL_H = 8;  // char cell size in CSS pixels (height)
 
 const renderTarget = new THREE.WebGLRenderTarget(CANVAS_W, CANVAS_H, {
   minFilter: THREE.NearestFilter,
   magFilter: THREE.NearestFilter,
-  // Default (LinearSRGBColorSpace): the bust shader writes a plain grayscale
-  // shade here; the post shader reads it back as a luminance signal only.
+  // Default (LinearSRGBColorSpace): the bust's shader writes its pre-encode
+  // linear colors directly, no sRGB round-trip — cleaner math in the post
+  // shader, at the cost of one manual linearToSRGB at output.
 });
 
-// Glyph atlas: the brand symbols drawn to their own horizontal slot in a
-// single canvas, then uploaded as a Three.js texture. Each glyph is rendered
-// white — a pure shape mask — and the post shader tints it with the matching
-// brand color (so one shape can fill several slots at different colors). The
-// shader samples by computing (charIdx + cellLocalX) / charCount as the U
-// coord. Glyph metrics are tunable to match the reference.
+// Char atlas: each char drawn to its own horizontal slot in a single canvas,
+// then uploaded as a Three.js texture. The shader samples from this by
+// computing (charIdx + cellLocalX) / charCount as the U coord.
 const ATLAS_CHAR_PX = 48; // generous; linear downsample handles small display sizes
 function makeCharAtlas() {
   const canvas = document.createElement('canvas');
-  canvas.width = GLYPH_COUNT * ATLAS_CHAR_PX;
+  canvas.width = chars.length * ATLAS_CHAR_PX;
   canvas.height = ATLAS_CHAR_PX;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.font = `bold ${Math.floor(ATLAS_CHAR_PX * 0.85)}px 'Courier New', ui-monospace, monospace`;
   ctx.fillStyle = 'white';
-  ctx.strokeStyle = 'white';
-  const S = ATLAS_CHAR_PX;
-  const cy = S / 2;
-  const cx = (slot) => slot * S + S / 2;
-
-  // Empty (hollow) rounded square, pre-rotated 45°. The canvas is CSS-rotated
-  // 45°, so a square drawn at 45° lands at 90° on screen — i.e. reads as an
-  // upright square. Stroke only: the interior stays transparent so the post
-  // shader fills it with the navy bg.
-  const square = (slot) => {
-    const side = S * 0.66;
-    ctx.save();
-    ctx.translate(cx(slot), cy);
-    ctx.rotate(Math.PI / 4);
-    ctx.beginPath();
-    ctx.roundRect(-side / 2, -side / 2, side, side, S * 0.11);
-    ctx.lineWidth = S * 0.14;
-    ctx.stroke();
-    ctx.restore();
-  };
-  const circle = (slot, r) => {
-    ctx.beginPath();
-    ctx.arc(cx(slot), cy, r, 0, Math.PI * 2);
-    ctx.fill();
-  };
-
-  // slot 0 — serif uppercase "O". Pre-rotated -45° to cancel the canvas's +45°
-  // CSS rotation so it reads upright; drawn in the page's serif stack so it
-  // carries real typographic stroke contrast (not a geometric ring).
-  ctx.save();
-  ctx.translate(cx(0), cy);
-  ctx.rotate(-Math.PI / 4);
-  ctx.font = `${Math.round(S * 1.05)}px 'Times New Roman', Georgia, serif`;
-  ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('O', 0, 0);
-  ctx.restore();
-
-  // slots 1-10 — empty squares; slots 11-20 — solid circles. The shape
-  // repeats; the post shader gives each slot its own gradient color so the
-  // squares and circles each span 10 shades (see rampColor).
-  for (let s = 1; s <= 10; s++) square(s);
-  for (let s = 11; s <= 20; s++) circle(s, S * 0.28);
-  // slot 21 — space: left empty
-
+  ctx.textAlign = 'center';
+  for (let i = 0; i < chars.length; i++) {
+    ctx.fillText(chars[i], i * ATLAS_CHAR_PX + ATLAS_CHAR_PX / 2, ATLAS_CHAR_PX / 2);
+  }
   const tex = new THREE.CanvasTexture(canvas);
   tex.magFilter = THREE.LinearFilter;
   tex.minFilter = THREE.LinearFilter;
@@ -162,10 +116,11 @@ const postMaterial = new THREE.ShaderMaterial({
     tDiffuse:   { value: renderTarget.texture },
     tChars:     { value: charAtlas },
     resolution: { value: new THREE.Vector2(CANVAS_W, CANVAS_H) },
-    cellSize:   { value: new THREE.Vector2(CELL_SIZE, CELL_SIZE) },
-    charCount:  { value: GLYPH_COUNT },
-    // Raw sRGB values (hex / 255) — written straight to the canvas in sRGB.
-    bgColor:    { value: new THREE.Vector3(11/255, 31/255, 51/255) },
+    cellSize:   { value: new THREE.Vector2(CELL_W, CELL_H) },
+    charCount:  { value: chars.length },
+    // Raw sRGB values (hex / 255). With the linearToSRGB step gone, the
+    // shader output is written straight to the canvas in sRGB space.
+    bgColor:    { value: new THREE.Vector3(238/255, 238/255, 228/255) },
   },
   vertexShader: `
     varying vec2 vUv;
@@ -182,82 +137,105 @@ const postMaterial = new THREE.ShaderMaterial({
     uniform float charCount;
     uniform vec3 bgColor;
     varying vec2 vUv;
-    // Brand color gradient for the squares + circles, sRGB display values —
-    // pale coral → dark blue through 6 key colors via a clamped-mix chain
-    // (portable across GLSL ES versions). White is kept exclusive to the serif
-    // "O" highlight and applied separately in main().
-    vec3 rampColor(float t) {
-      vec3 c0 = vec3(0.965, 0.753, 0.710); // pale coral
-      vec3 c1 = vec3(0.941, 0.522, 0.522); // coral
-      vec3 c2 = vec3(0.831, 0.502, 0.557); // rose
-      vec3 c3 = vec3(0.714, 0.494, 0.584); // mauve
-      vec3 c4 = vec3(0.431, 0.380, 0.510); // purple
-      vec3 c5 = vec3(0.208, 0.278, 0.396); // dark blue
-      float s = clamp(t, 0.0, 1.0) * 5.0;
-      vec3 c = c0;
-      c = mix(c, c1, clamp(s,       0.0, 1.0));
-      c = mix(c, c2, clamp(s - 1.0, 0.0, 1.0));
-      c = mix(c, c3, clamp(s - 2.0, 0.0, 1.0));
-      c = mix(c, c4, clamp(s - 3.0, 0.0, 1.0));
-      c = mix(c, c5, clamp(s - 4.0, 0.0, 1.0));
-      return c;
+    // Manual sRGB encode at the very end — a bare ShaderMaterial does NOT
+    // include Three's <colorspace_fragment>, so without this the linear
+    // values we compute get displayed raw and look dim. Using simple gamma
+    // 2.2 (vs the piecewise sRGB curve) — both visually indistinguishable
+    // for opaque colors.
+    vec3 linearToSRGB_(vec3 c) {
+      return pow(max(c, vec3(0.0)), vec3(1.0/2.2));
     }
     void main() {
       vec2 fragCoord = vUv * resolution;
-      // Snap to symbol cell
+      // Snap to character cell
       vec2 cellOrigin = floor(fragCoord / cellSize) * cellSize;
       vec2 cellCenterUV = (cellOrigin + cellSize * 0.5) / resolution;
-      // The bust render is grayscale — sample its shade once per cell.
-      float lum = texture2D(tDiffuse, cellCenterUV).r;
-      // Luminance drives the slot pick: bright = serif "O" (0), dark = space (last)
+      // Sample bust color at cell center (once per cell, via the texel lookup
+      // being the same for every pixel within a cell)
+      vec3 cellColor = texture2D(tDiffuse, cellCenterUV).rgb;
+      // Luminance drives char-density pick; invert:false semantics (bright = space, dark = '@')
+      float lum = dot(cellColor, vec3(0.3, 0.59, 0.11));
       float charIdx = clamp(floor((1.0 - lum) * charCount), 0.0, charCount - 1.0);
+      // Static paper-grain texture: in background-dominated cells (cream with
+      // no bust contribution), a cheap hash of the cell grid index sprinkles
+      // a very sparse muted glyph — keeps the ASCII aesthetic alive in the
+      // empty regions of the viewport so they don't read as flat color blocks.
+      // Threshold on the linear-space cream luminance (~0.85), not sRGB.
+      vec2 cellIdx = floor(fragCoord / cellSize);
+      float h = fract(sin(dot(cellIdx, vec2(127.1, 311.7))) * 43758.5453);
+      float bgMask = smoothstep(0.80, 0.88, lum);
+      float noiseTrigger = bgMask * step(0.96, h);
+      // glyph 1 ('.') in the top ~4% of cells, glyph 2 (',') in the top ~2%
+      float noiseCharIdx = step(0.96, h) * 1.0 + step(0.98, h) * 1.0;
+      charIdx = mix(charIdx, noiseCharIdx, noiseTrigger);
       // Position within this cell, 0..1
       vec2 cellLocal = (fragCoord - cellOrigin) / cellSize;
-      // Map to the atlas U (one glyph per slot)
+      // Map to char atlas U (one char per slot)
       vec2 charUV = vec2((charIdx + cellLocal.x) / charCount, cellLocal.y);
       float charMask = texture2D(tChars, charUV).a;
-      // Slot 0 is the serif "O" — the pure-white highlight. Slots 1..20 are
-      // the squares + circles, spanning the colored gradient pale coral → dark
-      // blue (charCount-3 = 19 is the last colored slot's zero-based offset).
-      vec3 symColor = charIdx < 0.5
-        ? vec3(1.0)
-        : rampColor((charIdx - 1.0) / (charCount - 3.0));
-      gl_FragColor = vec4(mix(bgColor, symColor, charMask), 1.0);
+      // bgColor is sRGB (raw display values). cellColor from RT is linear —
+      // encode only the bust color to sRGB, then mix directly in sRGB space.
+      // For noise cells, override to a muted brown so the glyph is visible
+      // against the cream background instead of cream-on-cream.
+      vec3 cellSRGB = linearToSRGB_(cellColor);
+      vec3 noiseColor = vec3(138.0/255.0, 74.0/255.0, 64.0/255.0); // --muted
+      vec3 charColor = mix(cellSRGB, noiseColor, noiseTrigger);
+      gl_FragColor = vec4(mix(bgColor, charColor, charMask), 1.0);
     }
   `,
 });
 postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMaterial));
 // -----------------------------------------------------------------------
 
-// Scene lights are omitted — the onBeforeCompile hook below computes its own
-// single key-light Lambert term from the surface normal and writes a plain
-// grayscale. The post shader reads that shade as a luminance signal and maps
-// it to a brand symbol per cell (bright = serif "O", dark = space). A manual light
-// (rather than camera depth) is what gives the bust real form, so the symbol
-// ramp reads as a side-lit portrait instead of a depth bullseye.
+// Lights intentionally omitted: the onBeforeCompile hook below overwrites
+// gl_FragColor.rgb with a pure depth tint, so any Phong lighting terms are
+// discarded before they reach the framebuffer. Skipping lights saves a
+// light-loop pass in the fragment shader per pixel.
+
+// Palette: salmon-near + black-far with slow hue drift. The Rodrigues
+// rotation preserves luma, so the dramatic brightness range stays intact
+// while the hue cycles through the spectrum over ~52 s (full 2π / 0.12).
+// All palette parameters are baked into the shader as constants — the only
+// runtime uniform is the clock tick below.
+const uTime = { value: 0 };
+
 const bustMaterial = new THREE.MeshPhongMaterial({
   color: 0xffffff,
   shininess: 12,
   flatShading: false,
 });
 bustMaterial.onBeforeCompile = (shader) => {
-  // `normal` is the view-space normal that <normal_fragment_begin> leaves in
-  // scope; <colorspace_fragment> runs late in main(), so it is still defined.
-  shader.fragmentShader = shader.fragmentShader.replace(
-    '#include <colorspace_fragment>',
-    `
-     // Key light from the left, fixed in view space. Mostly lateral (small z)
-     // so the bust has a genuine lit side and shadow side rather than a
-     // frontal wash — the shadow side is what gives the circle slots real
-     // coverage. The bust turntable-spins through it, sweeping the highlight.
-     // Half-Lambert (×0.5+0.5) maps the full surface to 0..1 and keeps the
-     // shadow side graded; used linearly so the 22 symbol slots spread evenly
-     // across the bust instead of the shadow collapsing onto the last slots.
-     vec3 _L = normalize(vec3(-0.85, 0.33, 0.30));
-     float _shade = dot(normal, _L) * 0.5 + 0.5;
-     gl_FragColor.rgb = vec3(_shade);
-     #include <colorspace_fragment>`
+  shader.uniforms.uMF_time = uTime;
+  shader.vertexShader = 'varying float vDepth;\n' + shader.vertexShader.replace(
+    '#include <project_vertex>',
+    '#include <project_vertex>\nvDepth = -mvPosition.z;'
   );
+  shader.fragmentShader =
+    'varying float vDepth;\n' +
+    'uniform float uMF_time;\n' +
+    // Rodrigues rotation around the luminance axis (1,1,1) — cheap hue shift
+    // that preserves perceived brightness.
+    'vec3 _hueShift(vec3 c, float a) {\n' +
+    '  vec3 k = vec3(0.57735);\n' +
+    '  float cs = cos(a); float sn = sin(a);\n' +
+    '  return c * cs + cross(k, c) * sn + k * dot(k, c) * (1.0 - cs);\n' +
+    '}\n' +
+    shader.fragmentShader.replace(
+      '#include <colorspace_fragment>',
+      `
+       // Linear-space vec3 constants = sRGB hex × gamma 2.2 decode.
+       const vec3 _near        = vec3(1.0000, 0.3887, 0.3184); // #FFA595
+       const vec3 _far         = vec3(0.0101, 0.00017, 0.00006); // #1A0201
+       const float _minDepth   = 5.70;
+       const float _maxDepth   = 6.50;
+       const float _driftSpeed = 0.12; // rad/s of hue rotation
+
+       float _t = clamp((vDepth - _minDepth) / (_maxDepth - _minDepth), 0.0, 1.0);
+       vec3 _color = mix(_near, _far, smoothstep(0.0, 1.0, _t));
+       _color = _hueShift(_color, uMF_time * _driftSpeed);
+       gl_FragColor.rgb = _color;
+       #include <colorspace_fragment>`
+    );
 };
 
 let bust;
@@ -347,18 +325,6 @@ const endDrag = () => {
 stage.addEventListener('pointerup', endDrag);
 stage.addEventListener('pointercancel', endDrag);
 
-// Vertical page scroll also rotates the bust — each CSS pixel scrolled turns
-// it a little, layered on top of the idle spin. The browser's own scroll
-// momentum supplies the inertia, so no separate fling is needed here.
-const SCROLL_SENSITIVITY = 0.005; // rad of bust spin per CSS pixel scrolled
-let lastScrollY = window.scrollY;
-const onScroll = () => {
-  const y = window.scrollY;
-  if (bust) bust.rotation.y += (y - lastScrollY) * SCROLL_SENSITIVITY;
-  lastScrollY = y;
-};
-window.addEventListener('scroll', onScroll, { passive: true });
-
 // Throttle to ~30 fps (33 ms frame budget).
 const FRAME_MS = 1000 / 30;
 let rafId = 0;
@@ -374,6 +340,7 @@ function animate(now) {
     angVel += (AUTO_SPIN_RATE - angVel) * Math.min(1, dt * SPIN_DAMP);
     bust.rotation.y += angVel * dt;
   }
+  uTime.value = now * 0.001; // seconds — drives the hue drift
   const cvs = renderer.domElement;
   if (cvs.width > 0 && cvs.height > 0) {
     try {
@@ -405,7 +372,6 @@ if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     running = false;
     cancelAnimationFrame(rafId);
-    window.removeEventListener('scroll', onScroll);
     renderTarget.dispose();
     charAtlas.dispose();
     postMaterial.dispose();
